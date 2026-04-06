@@ -1,0 +1,11 @@
+{
+  "name": "square-google-feed",
+  "version": "1.0.0",
+  "description": "Generates a Google Merchant Centre product feed from Square catalogue data",
+  "main": "generate-feed.js",
+  "scripts": {
+    "generate": "node generate-feed.js",
+    "test": "node generate-feed.js --dry-run"
+  },
+  "dependencies": {}
+}

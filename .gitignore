@@ -1,0 +1,5 @@
+node_modules/
+.env
+docs/feed.xml
+docs/issues-report.txt
+docs/index.html
