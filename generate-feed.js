@@ -374,9 +374,13 @@ async function fetchInventoryCounts(variationIds) {
       });
       if (response.counts) {
         for (const count of response.counts) {
-          const qty = parseFloat(count.quantity || '0');
-          if (!inventory[count.catalog_object_id] || qty > 0) {
-            inventory[count.catalog_object_id] = qty > 0 ? 'in_stock' : 'out_of_stock';
+          const qty = Math.max(0, Math.floor(parseFloat(count.quantity || '0')));
+          const existing = inventory[count.catalog_object_id];
+          if (!existing || qty > 0) {
+            inventory[count.catalog_object_id] = {
+              status: qty > 0 ? 'in_stock' : 'out_of_stock',
+              quantity: qty,
+            };
           }
         }
       }
@@ -441,7 +445,9 @@ function generateFeedEntry(item, variation, images, categories, inventory) {
   const googleCategory = mapToGoogleCategory(title, squareCategory);
 
   // Availability
-  const availability = inventory[variation.id] || 'in_stock';
+  const inventoryData = inventory[variation.id];
+  const availability = inventoryData ? inventoryData.status : 'in_stock';
+  const quantity = inventoryData ? inventoryData.quantity : null;
 
   // Product URL
   const productUrl = buildProductUrl(itemData.name, item.id);
@@ -461,6 +467,9 @@ function generateFeedEntry(item, variation, images, categories, inventory) {
   }
 
   entry += `      <g:availability>${availability}</g:availability>\n`;
+  if (quantity !== null) {
+    entry += `      <g:quantity>${quantity}</g:quantity>\n`;
+  }
 
   if (price) {
     entry += `      <g:price>${escapeXml(price)}</g:price>\n`;
