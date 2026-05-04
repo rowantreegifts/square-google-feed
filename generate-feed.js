@@ -318,6 +318,14 @@ function truncateTitle(title) {
   return title.substring(0, CONFIG.maxTitleLength - 3) + '...';
 }
 
+function cleanGoogleDescription(title, description) {
+  if (/emma bridgewater the wise witches 1\/2 pint mug/i.test(title || '')) {
+    return 'Emma Bridgewater ceramic 1/2 pint mug with The Wise Witches Halloween design. A decorative mug for tea, coffee, and gifting.';
+  }
+
+  return description;
+}
+
 function normalizeProductName(name) {
   return String(name || '')
     .toLowerCase()
@@ -401,10 +409,13 @@ function inferAgeGroup(title, squareCategory, googleCategory, description) {
 
 function inferGender(title, squareCategory, googleCategory, description, ageGroup) {
   const text = `${title || ''} ${squareCategory || ''} ${googleCategory || ''} ${description || ''}`.toLowerCase();
+  const isGenderRelevant = /apparel|accessories|jewelry|jewellery|clothing|bags|scarves|socks|gloves|hats|baby|toddler|kids|children/i.test(text);
+
+  if (!isGenderRelevant && !ageGroup) return null;
 
   if (/\b(women|womens|ladies|lady|female|girl|girls)\b/.test(text)) return 'female';
   if (/\b(men|mens|male|boy|boys)\b/.test(text)) return 'male';
-  if (ageGroup || /apparel|accessories|jewelry|jewellery|clothing|bags|scarves|socks|gloves|hats|baby|toddler|kids|children/i.test(text)) {
+  if (ageGroup || isGenderRelevant) {
     return 'unisex';
   }
 
@@ -534,7 +545,7 @@ function generateFeedEntry(item, variation, images, categories, inventory) {
   }
 
   // Description
-  const description = stripHtml(itemData.description) || title;
+  const description = cleanGoogleDescription(title, stripHtml(itemData.description) || title);
 
   // Images
   const imageIds = itemData.image_ids || [];
