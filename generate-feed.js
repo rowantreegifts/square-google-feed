@@ -671,7 +671,7 @@ function buildFeedXml(entries) {
 
 // ─── Issues Report ───────────────────────────────────────────────────────────
 
-function generateIssuesReport(allIssues) {
+function generateIssuesReport(allIssues, excludedIssues = {}) {
   const now = new Date().toISOString();
 
   const missingImages = allIssues.filter(i => i.missingImage);
@@ -683,6 +683,7 @@ function generateIssuesReport(allIssues) {
   const withSize = allIssues.filter(i => i.hasSize);
   const withAgeGroup = allIssues.filter(i => i.hasAgeGroup);
   const withGender = allIssues.filter(i => i.hasGender);
+  const excludedMissingImages = excludedIssues.missingImages || [];
 
   let report = '';
   report += '===============================================================\n';
@@ -703,7 +704,20 @@ function generateIssuesReport(allIssues) {
   report += `Products with size supplied:      ${withSize.length}\n`;
   report += `Products with age group supplied: ${withAgeGroup.length}\n`;
   report += `Products with gender supplied:    ${withGender.length}\n`;
+  report += `Products excluded, missing image: ${excludedMissingImages.length}\n`;
   report += '\n';
+
+  if (excludedMissingImages.length > 0) {
+    report += `\nPRODUCTS EXCLUDED FROM FEED - MISSING IMAGES (${excludedMissingImages.length})\n`;
+    report += `${'─'.repeat(60)}\n`;
+    report += `These products are temporarily left out of the Google feed because\n`;
+    report += `Google will not approve products without images. Add images in Square\n`;
+    report += `and they will be included again on the next feed update.\n\n`;
+    for (const item of excludedMissingImages.slice(0, 200)) {
+      report += `  - [${item.id}] ${item.title}\n`;
+    }
+    if (excludedMissingImages.length > 200) report += `  ... and ${excludedMissingImages.length - 200} more\n`;
+  }
 
   if (missingImages.length > 0) {
     report += `\nPRODUCTS MISSING IMAGES (${missingImages.length})\n`;
@@ -831,8 +845,12 @@ async function main() {
   console.log('\n📝 Generating feed entries...');
   const xmlEntries = [];
   const allIssues = [];
+  const excludedIssues = {
+    missingImages: [],
+  };
   let skipped = 0;
   let skippedCatchAll = 0;
+  let skippedMissingImage = 0;
 
   for (const item of items) {
     const itemData = item.item_data;
@@ -853,6 +871,12 @@ async function main() {
     for (const variation of variations) {
       const result = generateFeedEntry(item, variation, images, categories, inventory);
       if (result) {
+        if (result.issues.missingImage) {
+          excludedIssues.missingImages.push(result.issues);
+          skippedMissingImage++;
+          continue;
+        }
+
         xmlEntries.push(result.xml);
         allIssues.push(result.issues);
       }
@@ -863,12 +887,15 @@ async function main() {
   if (skippedCatchAll) {
     console.log(`   ✅ Excluded ${skippedCatchAll} catch-all placeholder products`);
   }
+  if (skippedMissingImage) {
+    console.log(`   ✅ Excluded ${skippedMissingImage} products missing images`);
+  }
 
   // Build the full XML feed
   const feedXml = buildFeedXml(xmlEntries);
 
   // Generate issues report
-  const issuesReport = generateIssuesReport(allIssues);
+  const issuesReport = generateIssuesReport(allIssues, excludedIssues);
 
   // Ensure output directory exists
   if (!fs.existsSync(CONFIG.outputDir)) {
