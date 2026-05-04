@@ -158,6 +158,25 @@ const CATEGORY_MAPPINGS = {
 
 const DEFAULT_CATEGORY = 'Arts & Entertainment > Party & Celebration > Gift Giving';
 
+const CATCH_ALL_PRODUCT_NAMES = new Set([
+  'in store purchase',
+  'bath body',
+  'cards stationery',
+  'homewares',
+  'toys games',
+  'clothing bags',
+  'books',
+  'children s clothes',
+]);
+
+const COLOR_KEYWORDS = [
+  'black', 'white', 'grey', 'gray', 'silver', 'gold', 'bronze', 'brown', 'beige',
+  'cream', 'ivory', 'red', 'pink', 'coral', 'orange', 'yellow', 'green', 'aqua',
+  'turquoise', 'teal', 'blue', 'navy', 'purple', 'lilac', 'violet', 'lavender',
+  'multi', 'multicolour', 'multicolor', 'rainbow', 'clear', 'natural', 'taupe',
+  'camel', 'khaki', 'burgundy', 'plum', 'mustard',
+];
+
 // ─── HTTP Helpers (no external dependencies) ─────────────────────────────────
 
 function squareGet(endpoint, params = {}) {
@@ -297,6 +316,99 @@ function truncateTitle(title) {
   if (!title) return '';
   if (title.length <= CONFIG.maxTitleLength) return title;
   return title.substring(0, CONFIG.maxTitleLength - 3) + '...';
+}
+
+function normalizeProductName(name) {
+  return String(name || '')
+    .toLowerCase()
+    .replace(/&/g, ' ')
+    .replace(/[^a-z0-9]+/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+function isCatchAllProduct(name) {
+  return CATCH_ALL_PRODUCT_NAMES.has(normalizeProductName(name));
+}
+
+function normalizeAttributeValue(value) {
+  return String(value || '')
+    .replace(/\s+/g, ' ')
+    .replace(/\s*([x×])\s*/gi, ' x ')
+    .trim();
+}
+
+function extractSize(title, variationName, description) {
+  const variation = normalizeAttributeValue(variationName);
+  const searchText = normalizeAttributeValue(`${title || ''} ${variationName || ''} ${description || ''}`);
+
+  if (variation && !/^regular$/i.test(variation)) {
+    if (/^(junior|regular|small|medium|large|extra large|one size)$/i.test(variation)) return variation;
+    if (/^(xs|s|m|l|xl|xxl)$/i.test(variation)) return variation.toUpperCase();
+    if (/^(?:uk\s*)?\d+(?:\s*[-–]\s*\d+)?$/i.test(variation)) return variation;
+  }
+
+  const patterns = [
+    /\b(one size|one-size)\b/i,
+    /\b(?:size|uk size|uk)\s*[:\-]?\s*((?:UK\s*)?\d+(?:\s*[-–]\s*\d+)?|XS|S|M|L|XL|XXL)\b/i,
+    /\b(\d+\s*[-–]\s*\d+\s*(?:m|months|yrs|years))\b/i,
+    /\b(?:dimensions?|measures?|measurement|card size|box size|napkin size|headband size|size)\s*[:\-]?\s*((?:\d+(?:\.\d+)?\s*(?:cm|mm|m|inch|in|")\s*(?:x|×)\s*){1,3}\d+(?:\.\d+)?\s*(?:cm|mm|m|inch|in|"))/i,
+    /\b(?:height|diameter|approx(?:imately)?|measuring|measures|size)\s*[:\-]?\s*(\d+(?:\.\d+)?\s*(?:cm|mm|m|ml|l|oz|inch|in|"))\b/i,
+  ];
+
+  for (const pattern of patterns) {
+    const match = searchText.match(pattern);
+    if (match) return normalizeAttributeValue(match[1]).replace(/^one-size$/i, 'One size');
+  }
+
+  return null;
+}
+
+function extractColor(title, variationName, description) {
+  const preferredText = `${title || ''} ${variationName || ''}`.toLowerCase();
+
+  function findColors(text) {
+    const found = [];
+    for (const color of COLOR_KEYWORDS) {
+      const pattern = new RegExp(`(^|[^a-z])${color.replace(/ /g, '\\s+')}(?=$|[^a-z])`, 'i');
+      if (pattern.test(text) && !found.includes(color)) {
+        found.push(color);
+      }
+    }
+    return found;
+  }
+
+  const selected = findColors(preferredText);
+  if (!selected.length) return null;
+
+  return selected
+    .slice(0, 3)
+    .map(color => color.replace(/^./, char => char.toUpperCase()))
+    .join('/');
+}
+
+function inferAgeGroup(title, squareCategory, googleCategory, description) {
+  const text = `${title || ''} ${squareCategory || ''} ${googleCategory || ''} ${description || ''}`.toLowerCase();
+
+  if (/\b(newborn|0\s*[-–]\s*3\s*m|up to 1 month|from birth)\b/.test(text)) return 'newborn';
+  if (/\b(baby|infant|0\s*[-–]\s*6\s*m|6\s*[-–]\s*12\s*m)\b/.test(text)) return 'infant';
+  if (/\b(toddler|1\s*[-–]\s*3\s*(?:years|yrs))\b/.test(text)) return 'toddler';
+  if (/\b(kids?|children|childrens|junior|girls?|boys?|age\s*\d+\+|aged\s*\d+\+)\b/.test(text)) return 'kids';
+  if (/apparel|accessories|jewelry|jewellery|clothing|bags|scarves|socks|gloves|hats/i.test(text)) return 'adult';
+
+  return null;
+}
+
+function inferGender(title, squareCategory, googleCategory, description, ageGroup) {
+  const text = `${title || ''} ${squareCategory || ''} ${googleCategory || ''} ${description || ''}`.toLowerCase();
+
+  if (/\b(women|womens|ladies|lady|female|girl|girls)\b/.test(text)) return 'female';
+  if (/\b(men|mens|male|boy|boys)\b/.test(text)) return 'male';
+  if (ageGroup || /apparel|accessories|jewelry|jewellery|clothing|bags|scarves|socks|gloves|hats|baby|toddler|kids|children/i.test(text)) {
+    return 'unisex';
+  }
+
+  return null;
 }
 
 // ─── Square API Data Fetching ────────────────────────────────────────────────
@@ -443,6 +555,10 @@ function generateFeedEntry(item, variation, images, categories, inventory) {
     }
   }
   const googleCategory = mapToGoogleCategory(title, squareCategory);
+  const size = extractSize(title, variationName, description);
+  const color = extractColor(title, variationName, description);
+  const ageGroup = inferAgeGroup(title, squareCategory, googleCategory, description);
+  const gender = inferGender(title, squareCategory, googleCategory, description, ageGroup);
 
   // Availability
   const inventoryData = inventory[variation.id];
@@ -483,6 +599,22 @@ function generateFeedEntry(item, variation, images, categories, inventory) {
     entry += `      <g:mpn>${escapeXml(sku)}</g:mpn>\n`;
   }
 
+  if (color) {
+    entry += `      <g:color>${escapeXml(color)}</g:color>\n`;
+  }
+
+  if (size) {
+    entry += `      <g:size>${escapeXml(size)}</g:size>\n`;
+  }
+
+  if (ageGroup) {
+    entry += `      <g:age_group>${ageGroup}</g:age_group>\n`;
+  }
+
+  if (gender) {
+    entry += `      <g:gender>${gender}</g:gender>\n`;
+  }
+
   entry += `      <g:google_product_category>${escapeXml(googleCategory)}</g:google_product_category>\n`;
   if (squareCategory) {
     entry += `      <g:product_type>${escapeXml(squareCategory)}</g:product_type>\n`;
@@ -507,6 +639,10 @@ function generateFeedEntry(item, variation, images, categories, inventory) {
       titleTooLong: (title.length > CONFIG.maxTitleLength),
       googleCategory: googleCategory,
       categoryMapped: googleCategory !== DEFAULT_CATEGORY,
+      hasColor: Boolean(color),
+      hasSize: Boolean(size),
+      hasAgeGroup: Boolean(ageGroup),
+      hasGender: Boolean(gender),
     }
   };
 }
@@ -543,6 +679,10 @@ function generateIssuesReport(allIssues) {
   const missingDescriptions = allIssues.filter(i => i.missingDescription);
   const longTitles = allIssues.filter(i => i.titleTooLong);
   const unmappedCategories = allIssues.filter(i => !i.categoryMapped);
+  const withColor = allIssues.filter(i => i.hasColor);
+  const withSize = allIssues.filter(i => i.hasSize);
+  const withAgeGroup = allIssues.filter(i => i.hasAgeGroup);
+  const withGender = allIssues.filter(i => i.hasGender);
 
   let report = '';
   report += '===============================================================\n';
@@ -559,6 +699,10 @@ function generateIssuesReport(allIssues) {
   report += `Products missing descriptions:    ${missingDescriptions.length}\n`;
   report += `Products with titles too long:    ${longTitles.length}\n`;
   report += `Products using default category:  ${unmappedCategories.length}\n`;
+  report += `Products with colour supplied:    ${withColor.length}\n`;
+  report += `Products with size supplied:      ${withSize.length}\n`;
+  report += `Products with age group supplied: ${withAgeGroup.length}\n`;
+  report += `Products with gender supplied:    ${withGender.length}\n`;
   report += '\n';
 
   if (missingImages.length > 0) {
@@ -688,6 +832,7 @@ async function main() {
   const xmlEntries = [];
   const allIssues = [];
   let skipped = 0;
+  let skippedCatchAll = 0;
 
   for (const item of items) {
     const itemData = item.item_data;
@@ -696,6 +841,11 @@ async function main() {
     // Skip archived items
     if (item.is_deleted || itemData.is_archived) {
       skipped++;
+      continue;
+    }
+
+    if (isCatchAllProduct(itemData.name)) {
+      skippedCatchAll++;
       continue;
     }
 
@@ -710,6 +860,9 @@ async function main() {
   }
 
   console.log(`   ✅ Generated ${xmlEntries.length} feed entries (skipped ${skipped} archived items)`);
+  if (skippedCatchAll) {
+    console.log(`   ✅ Excluded ${skippedCatchAll} catch-all placeholder products`);
+  }
 
   // Build the full XML feed
   const feedXml = buildFeedXml(xmlEntries);
@@ -759,6 +912,16 @@ async function main() {
   const missingPrices = allIssues.filter(i => i.missingPrice).length;
   const missingDescs = allIssues.filter(i => i.missingDescription).length;
   const longTitles = allIssues.filter(i => i.titleTooLong).length;
+  const withColor = allIssues.filter(i => i.hasColor).length;
+  const withSize = allIssues.filter(i => i.hasSize).length;
+  const withAgeGroup = allIssues.filter(i => i.hasAgeGroup).length;
+  const withGender = allIssues.filter(i => i.hasGender).length;
+
+  console.log('\n📈 Visibility details supplied:');
+  console.log(`   - ${withColor} products with colour`);
+  console.log(`   - ${withSize} products with size`);
+  console.log(`   - ${withAgeGroup} products with age group`);
+  console.log(`   - ${withGender} products with gender`);
 
   if (missingImages || missingPrices || missingDescs || longTitles) {
     console.log('\n⚠️  Issues found:');
