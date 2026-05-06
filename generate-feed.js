@@ -181,8 +181,38 @@ const COLOR_KEYWORDS = [
   'cream', 'ivory', 'red', 'pink', 'coral', 'orange', 'yellow', 'green', 'aqua',
   'turquoise', 'teal', 'blue', 'navy', 'purple', 'lilac', 'violet', 'lavender',
   'multi', 'multicolour', 'multicolor', 'rainbow', 'clear', 'natural', 'taupe',
-  'camel', 'khaki', 'burgundy', 'plum', 'mustard',
+  'camel', 'khaki', 'burgundy', 'plum', 'mustard', 'fuchsia', 'fuschia', 'rust',
+  'cobalt', 'indigo', 'bordeaux', 'corn', 'petrol', 'thyme', 'airforce',
+  'frost', 'mulberry', 'avocado', 'berry', 'coco', 'matcha', 'mist', 'smoke',
+  'cranberry', 'bran', 'moss', 'thistle', 'lime', 'graphite', 'midnight',
+  'jacaranda', 'citreon', 'citron', 'baroque', 'charcoal', 'lemonade',
+  'mandarin', 'nougat', 'denim', 'canal',
 ];
+
+const COLOR_ALIASES = [
+  ['mono bloom', 'Black/White'],
+  ['mono blooms', 'Black/White'],
+  ['mono stripe', 'Black/White'],
+  ['mono spot', 'Black/White'],
+  ['mono', 'Black/White'],
+  ['hot tomato', 'Red'],
+  ['english rose', 'Pink'],
+  ['aquatic awe', 'Blue'],
+  ['chilli oil', 'Red'],
+  ['denim rain', 'Blue'],
+  ['multicoloured', 'Multicolour'],
+  ['multi coloured', 'Multicolour'],
+  ['multi-colored', 'Multicolour'],
+  ['multi colored', 'Multicolour'],
+  ['fuschia', 'Fuchsia'],
+  ['citreon', 'Citron'],
+];
+
+const CONTEXTUAL_COLOR_KEYWORDS = new Set([
+  'corn', 'thyme', 'airforce', 'frost', 'avocado', 'berry', 'coco', 'matcha',
+  'mist', 'smoke', 'bran', 'thistle', 'graphite', 'midnight', 'jacaranda',
+  'baroque', 'lemonade', 'mandarin', 'nougat', 'canal',
+]);
 
 const BRAND_NAMES = [
   'Alice Wheeler', 'Amica', 'Busy B', 'Caroline Gardner', 'Cath Kidston',
@@ -459,10 +489,16 @@ function extractSize(title, variationName, description) {
 
 function extractColor(title, variationName, description) {
   const preferredText = `${title || ''} ${variationName || ''}`.toLowerCase();
+  const colourContext = /\b(roka|sock|socks|bag|purse|wallet|scarf|stole|umbrella|glove|gloves|hat|keyring|cosmetic|wash bag|backpack|crossbody)\b/i.test(preferredText);
+
+  for (const [alias, color] of COLOR_ALIASES) {
+    if (textHasPhrase(preferredText, alias)) return color;
+  }
 
   function findColors(text) {
     const found = [];
     for (const color of COLOR_KEYWORDS) {
+      if (CONTEXTUAL_COLOR_KEYWORDS.has(color) && !colourContext) continue;
       const pattern = new RegExp(`(^|[^a-z])${color.replace(/ /g, '\\s+')}(?=$|[^a-z])`, 'i');
       if (pattern.test(text) && !found.includes(color)) {
         found.push(color);
@@ -482,11 +518,13 @@ function extractColor(title, variationName, description) {
 
 function inferAgeGroup(title, squareCategory, googleCategory, description) {
   const text = `${title || ''} ${squareCategory || ''} ${googleCategory || ''} ${description || ''}`.toLowerCase();
+  const titleAndGoogleCategory = `${title || ''} ${googleCategory || ''}`.toLowerCase();
 
   if (/\b(newborn|0\s*[-–]\s*3\s*m|up to 1 month|from birth)\b/.test(text)) return 'newborn';
   if (/\b(baby|infant|0\s*[-–]\s*6\s*m|6\s*[-–]\s*12\s*m)\b/.test(text)) return 'infant';
   if (/\b(toddler|1\s*[-–]\s*3\s*(?:years|yrs))\b/.test(text)) return 'toddler';
   if (/\b(kids?|children|childrens|junior|girls?|boys?|age\s*\d+\+|aged\s*\d+\+)\b/.test(text)) return 'kids';
+  if (/toys|games|stuffed animals|puzzles|soft toy|jellycat|moulin roty|felt amica/i.test(titleAndGoogleCategory)) return 'kids';
   if (/apparel|accessories|jewelry|jewellery|clothing|bags|scarves|socks|gloves|hats/i.test(text)) return 'adult';
 
   return null;
