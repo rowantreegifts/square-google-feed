@@ -130,6 +130,9 @@ const CATEGORY_MAPPINGS = {
   'puzzle': 'Toys & Games > Puzzles',
   'teddy': 'Toys & Games > Stuffed Animals',
   'soft toy': 'Toys & Games > Stuffed Animals',
+  'jellycat': 'Toys & Games > Stuffed Animals',
+  'moulin roty': 'Toys & Games',
+  'felt amica': 'Toys & Games > Stuffed Animals',
   'baby': 'Baby & Toddler',
   'soap': 'Health & Beauty > Personal Care > Cosmetics > Bath & Body > Bar Soap',
   'bath bomb': 'Health & Beauty > Personal Care > Cosmetics > Bath & Body > Bath Additives',
@@ -139,6 +142,7 @@ const CATEGORY_MAPPINGS = {
   'lip balm': 'Health & Beauty > Personal Care > Cosmetics > Skin Care > Lip Balm',
   'perfume': 'Health & Beauty > Personal Care > Cosmetics > Fragrance',
   'fragrance': 'Health & Beauty > Personal Care > Cosmetics > Fragrance',
+  'cologne': 'Health & Beauty > Personal Care > Cosmetics > Fragrance',
   'book': 'Media > Books',
   'books': 'Media > Books',
   'cookbook': 'Media > Books > Non-Fiction Books',
@@ -154,6 +158,9 @@ const CATEGORY_MAPPINGS = {
   'biscuits': 'Food, Beverages & Tobacco > Food Items > Bakery > Biscuits & Cookies',
   'gift set': 'Arts & Entertainment > Party & Celebration > Gift Giving > Gift Sets',
   'gift': 'Arts & Entertainment > Party & Celebration > Gift Giving',
+  'umbrella': 'Apparel & Accessories > Clothing Accessories > Umbrellas',
+  'dressing gown': 'Apparel & Accessories > Clothing > Sleepwear & Loungewear > Robes',
+  'stole': 'Apparel & Accessories > Clothing Accessories > Scarves & Shawls',
 };
 
 const DEFAULT_CATEGORY = 'Arts & Entertainment > Party & Celebration > Gift Giving';
@@ -175,6 +182,23 @@ const COLOR_KEYWORDS = [
   'turquoise', 'teal', 'blue', 'navy', 'purple', 'lilac', 'violet', 'lavender',
   'multi', 'multicolour', 'multicolor', 'rainbow', 'clear', 'natural', 'taupe',
   'camel', 'khaki', 'burgundy', 'plum', 'mustard',
+];
+
+const BRAND_NAMES = [
+  'Alice Wheeler', 'Amica', 'Busy B', 'Caroline Gardner', 'Cath Kidston',
+  'Doris and Dude', 'East of India', 'Elizabeth Scarlett', 'Emma Bridgewater',
+  'Felt Amica', 'Gemjar', 'Gisela Graham', 'Hannah Turner', 'Inis',
+  'J J Textile', 'Jellycat', 'Joma Jewellery', 'Les Touristes', 'Moulin Roty',
+  'Powder', 'Rachel Ellen', 'Roka', 'Sam Wilson', 'Simon Drew', 'Sophie Allport',
+  'Soruka', 'Talking Tables', 'Thought', 'William Morris', 'Wrendale Designs',
+];
+
+const BRAND_ALIASES = [
+  ['Wrendale', 'Wrendale Designs'],
+  ['Joya', 'Gemjar'],
+  ['Gemjar / Joya', 'Gemjar'],
+  ['Roka Bags', 'Roka'],
+  ['Roka Socks', 'Roka'],
 ];
 
 // ─── HTTP Helpers (no external dependencies) ─────────────────────────────────
@@ -337,6 +361,67 @@ function normalizeProductName(name) {
 
 function isCatchAllProduct(name) {
   return CATCH_ALL_PRODUCT_NAMES.has(normalizeProductName(name));
+}
+
+function textHasPhrase(text, phrase) {
+  const normalizedText = normalizeProductName(text);
+  const normalizedPhrase = normalizeProductName(phrase);
+  return new RegExp(`(^| )${normalizedPhrase.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}( |$)`).test(normalizedText);
+}
+
+function inferBrand(title, squareCategory) {
+  const searchText = `${title || ''} ${squareCategory || ''}`;
+
+  for (const [alias, brand] of BRAND_ALIASES) {
+    if (textHasPhrase(searchText, alias)) return brand;
+  }
+
+  for (const brand of BRAND_NAMES) {
+    if (textHasPhrase(searchText, brand)) return brand;
+  }
+
+  return CONFIG.defaultBrand;
+}
+
+function normalizeSkuIdentifier(value) {
+  return String(value || '').replace(/[\s-]/g, '').trim();
+}
+
+function isValidGtin(value) {
+  const digits = normalizeSkuIdentifier(value);
+  if (!/^\d{8}$|^\d{12}$|^\d{13}$|^\d{14}$/.test(digits)) return false;
+
+  let sum = 0;
+  const checkDigit = Number(digits[digits.length - 1]);
+  const body = digits.slice(0, -1);
+  for (let i = body.length - 1, position = 1; i >= 0; i--, position++) {
+    const digit = Number(body[i]);
+    sum += digit * (position % 2 === 1 ? 3 : 1);
+  }
+  return (10 - (sum % 10)) % 10 === checkDigit;
+}
+
+function buildProductIdentifiers(sku, brand) {
+  const cleanedSku = normalizeSkuIdentifier(sku);
+  const identifiers = {
+    brand,
+    gtin: null,
+    mpn: null,
+    identifierExists: null,
+  };
+
+  if (cleanedSku && isValidGtin(cleanedSku)) {
+    identifiers.gtin = cleanedSku;
+    return identifiers;
+  }
+
+  if (cleanedSku && brand !== CONFIG.defaultBrand) {
+    identifiers.mpn = cleanedSku;
+    return identifiers;
+  }
+
+  identifiers.identifierExists = 'no';
+  return identifiers;
 }
 
 function normalizeAttributeValue(value) {
@@ -566,6 +651,8 @@ function generateFeedEntry(item, variation, images, categories, inventory) {
     }
   }
   const googleCategory = mapToGoogleCategory(title, squareCategory);
+  const brand = inferBrand(title, squareCategory);
+  const identifiers = buildProductIdentifiers(sku, brand);
   const size = extractSize(title, variationName, description);
   const color = extractColor(title, variationName, description);
   const ageGroup = inferAgeGroup(title, squareCategory, googleCategory, description);
@@ -603,11 +690,18 @@ function generateFeedEntry(item, variation, images, categories, inventory) {
   }
 
   entry += `      <g:condition>${CONFIG.condition}</g:condition>\n`;
-  entry += `      <g:brand>${escapeXml(CONFIG.defaultBrand)}</g:brand>\n`;
-  entry += `      <g:identifier_exists>no</g:identifier_exists>\n`;
+  entry += `      <g:brand>${escapeXml(identifiers.brand)}</g:brand>\n`;
 
-  if (sku) {
-    entry += `      <g:mpn>${escapeXml(sku)}</g:mpn>\n`;
+  if (identifiers.gtin) {
+    entry += `      <g:gtin>${escapeXml(identifiers.gtin)}</g:gtin>\n`;
+  }
+
+  if (identifiers.mpn) {
+    entry += `      <g:mpn>${escapeXml(identifiers.mpn)}</g:mpn>\n`;
+  }
+
+  if (identifiers.identifierExists) {
+    entry += `      <g:identifier_exists>${identifiers.identifierExists}</g:identifier_exists>\n`;
   }
 
   if (color) {
@@ -650,6 +744,10 @@ function generateFeedEntry(item, variation, images, categories, inventory) {
       titleTooLong: (title.length > CONFIG.maxTitleLength),
       googleCategory: googleCategory,
       categoryMapped: googleCategory !== DEFAULT_CATEGORY,
+      brand: identifiers.brand,
+      hasGtin: Boolean(identifiers.gtin),
+      hasMpn: Boolean(identifiers.mpn),
+      identifierExistsNo: identifiers.identifierExists === 'no',
       hasColor: Boolean(color),
       hasSize: Boolean(size),
       hasAgeGroup: Boolean(ageGroup),
@@ -694,6 +792,10 @@ function generateIssuesReport(allIssues, excludedIssues = {}) {
   const withSize = allIssues.filter(i => i.hasSize);
   const withAgeGroup = allIssues.filter(i => i.hasAgeGroup);
   const withGender = allIssues.filter(i => i.hasGender);
+  const withRealBrand = allIssues.filter(i => i.brand && i.brand !== CONFIG.defaultBrand);
+  const withGtin = allIssues.filter(i => i.hasGtin);
+  const withMpn = allIssues.filter(i => i.hasMpn);
+  const identifierExistsNo = allIssues.filter(i => i.identifierExistsNo);
   const excludedMissingImages = excludedIssues.missingImages || [];
 
   let report = '';
@@ -715,6 +817,10 @@ function generateIssuesReport(allIssues, excludedIssues = {}) {
   report += `Products with size supplied:      ${withSize.length}\n`;
   report += `Products with age group supplied: ${withAgeGroup.length}\n`;
   report += `Products with gender supplied:    ${withGender.length}\n`;
+  report += `Products with real brand supplied:${withRealBrand.length}\n`;
+  report += `Products with GTIN supplied:      ${withGtin.length}\n`;
+  report += `Products with MPN supplied:       ${withMpn.length}\n`;
+  report += `Products marked no identifiers:   ${identifierExistsNo.length}\n`;
   report += `Products excluded, missing image: ${excludedMissingImages.length}\n`;
   report += '\n';
 
