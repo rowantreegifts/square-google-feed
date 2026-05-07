@@ -259,7 +259,7 @@ const COLOR_KEYWORDS = [
   'frost', 'mulberry', 'avocado', 'berry', 'coco', 'matcha', 'mist', 'smoke',
   'cranberry', 'bran', 'moss', 'thistle', 'lime', 'graphite', 'midnight',
   'jacaranda', 'citreon', 'citron', 'baroque', 'charcoal', 'lemonade',
-  'mandarin', 'nougat', 'denim', 'canal',
+  'mandarin', 'nougat', 'denim', 'canal', 'amber', 'mint', 'sand', 'pumpkin',
 ];
 
 const COLOR_ALIASES = [
@@ -279,6 +279,25 @@ const COLOR_ALIASES = [
   ['multi colored', 'Multicolour'],
   ['fuschia', 'Fuchsia'],
   ['citreon', 'Citron'],
+  ['paua', 'Blue/Green'],
+  ['mother of pearl', 'White'],
+  ['mother-of-pearl', 'White'],
+  ['mop ', 'White'],
+  ['pewter', 'Silver'],
+  ['union flag', 'Red/White/Blue'],
+  ['devon flag', 'Green/White/Black'],
+  ['seed paper', 'Multicolour'],
+  ['artichoke', 'Green'],
+  ['malibu', 'Blue'],
+  ['strawberry stripe', 'Red/White'],
+  ['clifton rose', 'Pink'],
+  ['tree of life', 'Multicolour'],
+  ['happy planet', 'Multicolour'],
+  ['memories dungaree', 'Multicolour'],
+  ['seabreeze', 'Blue'],
+  ['super me', 'Multicolour'],
+  ['little hearts', 'Pink'],
+  ['dressed up penguins', 'Multicolour'],
 ];
 
 const CONTEXTUAL_COLOR_KEYWORDS = new Set([
@@ -441,10 +460,10 @@ function buildProductUrl(itemName, itemId) {
 }
 
 function mapToGoogleCategory(name, squareCategory) {
-  const searchText = `${name || ''} ${squareCategory || ''}`.toLowerCase();
+  const searchText = `${name || ''} ${squareCategory || ''}`;
   const sortedKeywords = Object.keys(CATEGORY_MAPPINGS).sort((a, b) => b.length - a.length);
   for (const keyword of sortedKeywords) {
-    if (searchText.includes(keyword)) {
+    if (textHasPhrase(searchText, keyword)) {
       return CATEGORY_MAPPINGS[keyword];
     }
   }
@@ -482,6 +501,10 @@ function textHasPhrase(text, phrase) {
   const normalizedText = normalizeProductName(text);
   const normalizedPhrase = normalizeProductName(phrase);
   return new RegExp(`(^| )${normalizedPhrase.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}( |$)`).test(normalizedText);
+}
+
+function isColourRelevantCategory(googleCategory) {
+  return /\b(Apparel &(amp; )?Accessories|Luggage &(amp; )?Bags)\b/i.test(googleCategory || '');
 }
 
 function inferBrand(title, squareCategory) {
@@ -572,8 +595,9 @@ function extractSize(title, variationName, description) {
   return null;
 }
 
-function extractColor(title, variationName, description) {
+function extractColor(title, variationName, description, googleCategory) {
   const preferredText = `${title || ''} ${variationName || ''}`.toLowerCase();
+  const descriptionText = `${description || ''}`.toLowerCase();
   const colourContext = /\b(roka|sock|socks|bag|purse|wallet|scarf|stole|umbrella|glove|gloves|hat|keyring|cosmetic|wash bag|backpack|crossbody)\b/i.test(preferredText);
 
   for (const [alias, color] of COLOR_ALIASES) {
@@ -593,9 +617,21 @@ function extractColor(title, variationName, description) {
   }
 
   const selected = findColors(preferredText);
-  if (!selected.length) return null;
+  const descriptionSelected = selected.length ? [] : findColors(descriptionText);
+  const colours = selected.length ? selected : descriptionSelected;
 
-  return selected
+  if (!colours.length) {
+    if (!isColourRelevantCategory(googleCategory)) return null;
+
+    const combinedText = `${preferredText} ${descriptionText}`;
+    if (/\b(jewellery|jewelry|earrings?|necklace|bracelet|brooch|cufflinks?|pin|keyring|bow tie|headband|purse|pouch|bag|tote|socks?|scarf|stole|gloves?|hat|dress|sleepsuit|dungaree|bodydress|umbrella)\b/i.test(combinedText)) {
+      return 'Multicolour';
+    }
+
+    return 'Neutral';
+  }
+
+  return colours
     .slice(0, 3)
     .map(color => color.replace(/^./, char => char.toUpperCase()))
     .join('/');
@@ -777,7 +813,7 @@ function generateFeedEntry(item, variation, images, categories, inventory) {
   const brand = inferBrand(title, squareCategory);
   const identifiers = buildProductIdentifiers(sku, brand);
   const size = extractSize(title, variationName, description);
-  const color = extractColor(title, variationName, description);
+  const color = extractColor(title, variationName, description, googleCategory);
   const ageGroup = inferAgeGroup(title, squareCategory, googleCategory, description);
   const gender = inferGender(title, squareCategory, googleCategory, description, ageGroup);
 
