@@ -207,6 +207,7 @@ const CATEGORY_MAPPINGS = {
   'shower gel': 'Health & Beauty > Personal Care > Cosmetics > Bath & Body > Body Wash',
   'shampoo': 'Health & Beauty > Personal Care > Hair Care > Shampoo & Conditioner > Shampoo',
   'conditioner': 'Health & Beauty > Personal Care > Hair Care > Shampoo & Conditioner > Conditioners',
+  'sea salt spray': 'Health & Beauty > Personal Care > Hair Care > Hair Styling Products',
   'face cloth': 'Health & Beauty > Personal Care > Cosmetics > Skin Care',
   'paw nose balm': 'Animals & Pet Supplies > Pet Supplies > Pet Grooming Supplies',
   'paw & nose balm': 'Animals & Pet Supplies > Pet Supplies > Pet Grooming Supplies',
@@ -461,6 +462,11 @@ function buildProductUrl(itemName, itemId) {
 
 function mapToGoogleCategory(name, squareCategory) {
   const searchText = `${name || ''} ${squareCategory || ''}`.toLowerCase();
+
+  if (/\binis\b/.test(searchText) && /\b(traveler|traveller)\s+duo\s+set\b/.test(searchText)) {
+    return 'Health & Beauty > Personal Care > Cosmetics > Bath & Body > Body Wash';
+  }
+
   const sortedKeywords = Object.keys(CATEGORY_MAPPINGS).sort((a, b) => b.length - a.length);
   for (const keyword of sortedKeywords) {
     const hasKeyword = keyword === 'watch'
