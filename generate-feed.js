@@ -460,10 +460,13 @@ function buildProductUrl(itemName, itemId) {
 }
 
 function mapToGoogleCategory(name, squareCategory) {
-  const searchText = `${name || ''} ${squareCategory || ''}`;
+  const searchText = `${name || ''} ${squareCategory || ''}`.toLowerCase();
   const sortedKeywords = Object.keys(CATEGORY_MAPPINGS).sort((a, b) => b.length - a.length);
   for (const keyword of sortedKeywords) {
-    if (textHasPhrase(searchText, keyword)) {
+    const hasKeyword = keyword === 'watch'
+      ? textHasPhrase(searchText, keyword)
+      : searchText.includes(keyword);
+    if (hasKeyword) {
       return CATEGORY_MAPPINGS[keyword];
     }
   }
